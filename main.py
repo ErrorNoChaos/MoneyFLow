@@ -3,7 +3,8 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout
 from login_page import LoginPage
 from dashboard_page import DashboardPage
 from transaction_page import TransactionPage
-from history_page import HistoryPage
+# Use DB-backed history page (history.py) instead of CSV-backed history_page.py
+from history import HistoryPage
 class BankingApp(QMainWindow):
     def __init__(self):
         super().__init__()

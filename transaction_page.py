@@ -1,7 +1,6 @@
-import pandas as pd
-from datetime import datetime
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox
 from PyQt5.QtGui import QFont
+from db_connection import get_connection, close_connection
 
 class TransactionPage(QWidget):
     def __init__(self, parent, user, transaction_type):
@@ -9,8 +8,6 @@ class TransactionPage(QWidget):
         self.parent = parent
         self.user = user
         self.transaction_type = transaction_type
-        self.df = pd.read_csv('database.csv')
-        self.transactions_df = pd.read_csv('transactions.csv')
         self.init_ui()
     
     def init_ui(self):
@@ -50,33 +47,43 @@ class TransactionPage(QWidget):
                 QMessageBox.warning(self, 'Error', 'Insufficient balance')
                 return
             
-            idx = self.df[self.df['account_id'] == self.user['account_id']].index[0]
+            conn = get_connection()
+            if not conn:
+                QMessageBox.critical(self, 'Error', 'Database connection failed')
+                return
             
+            cursor = conn.cursor()
+            
+            # Calculate new balance
             if self.transaction_type == 'deposit':
-                self.df.at[idx, 'balance'] += amount
+                new_balance = float(self.user['balance']) + amount
                 trans_type = 'Deposit'
             else:
-                self.df.at[idx, 'balance'] -= amount
+                new_balance = float(self.user['balance']) - amount
                 trans_type = 'Withdrawal'
             
-            self.df.to_csv('database.csv', index=False)
-            self.log_transaction(self.user['account_id'], trans_type, amount, self.df.at[idx, 'balance'])
-            self.user['balance'] = self.df.at[idx, 'balance']
+            # Update balance
+            query = "UPDATE accounts SET balance = %s WHERE account_id = %s"
+            cursor.execute(query, (new_balance, self.user['account_id']))
+            
+            # Log transaction
+            query = """
+            INSERT INTO transactions (account_id, transaction_type, amount, balance_after)
+            VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(query, (self.user['account_id'], trans_type, amount, new_balance))
+            
+            conn.commit()
+            cursor.close()
+            close_connection(conn)
+            
+            self.user['balance'] = new_balance
+            self.parent.current_user = self.user
             
             QMessageBox.information(self, 'Success', f'{trans_type} of ${amount:.2f} successful')
-            self.parent.current_user = self.user
             self.parent.show_dashboard(self.user)
         
         except ValueError:
             QMessageBox.warning(self, 'Error', 'Invalid amount')
-    
-    def log_transaction(self, acc_id, trans_type, amount, balance_after):
-        new_transaction = pd.DataFrame({
-            'account_id': [acc_id],
-            'transaction_type': [trans_type],
-            'amount': [amount],
-            'timestamp': [datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            'balance_after': [balance_after]
-        })
-        self.transactions_df = pd.concat([self.transactions_df, new_transaction], ignore_index=True)
-        self.transactions_df.to_csv('transactions.csv', index=False)
+        except Exception as e:
+            QMessageBox.critical(self, 'Error', f'Transaction failed: {str(e)}')

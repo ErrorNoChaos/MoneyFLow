@@ -1,12 +1,12 @@
 import pandas as pd
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton, QMessageBox
 from PyQt5.QtGui import QFont
+from db_connection import get_connection,close_connection
 
 class LoginPage(QWidget):
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
-        self.df = pd.read_csv('database.csv')
         self.init_ui()
     
     def init_ui(self):
@@ -39,10 +39,20 @@ class LoginPage(QWidget):
             QMessageBox.warning(self, 'Error', 'Invalid input format')
             return
         
-        user = self.df[(self.df['account_id'] == acc_id) & (self.df['pin'] == pin)]
+        conn = get_connection()
+        if not conn:
+            QMessageBox.critical(self, 'Error', 'Database connection failed')
+            return
         
-        if user.empty:
+        cursor = conn.cursor(dictionary=True)
+        query = "SELECT * FROM accounts WHERE account_id = %s AND pin = %s"
+        cursor.execute(query, (acc_id, pin))
+        user = cursor.fetchone()
+        
+        cursor.close()
+        close_connection(conn)
+        
+        if not user:
             QMessageBox.warning(self, 'Login Failed', 'Invalid account ID or PIN')
         else:
-            user_data = user.iloc[0].to_dict()
-            self.parent.show_dashboard(user_data)
+            self.parent.show_dashboard(user)
